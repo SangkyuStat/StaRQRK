@@ -8,7 +8,7 @@ library(Rcpp)
 sourceCpp("mrqscr.cpp")
 ```
 
-This can be utilized in the following way, with a small example:
+This can be utilized in the following way, with a small example as follows:
 ```
 set.seed(100)
 n <- 100 # number of observations
