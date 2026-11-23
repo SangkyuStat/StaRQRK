@@ -7,6 +7,7 @@ Rcpp::List mrqscr_cpp(const arma::vec& y,
                             const arma::vec& tau_vec,
                             Rcpp::Nullable<arma::mat> z_mat = R_NilValue,
                             int order = 3,
+                            Rcpp::Nullable<int> numknot = R_NilValue,
                             bool interaction = false) {
   int n = y.n_elem;
   int p_init = x_mat.n_cols;
@@ -17,12 +18,22 @@ Rcpp::List mrqscr_cpp(const arma::vec& y,
     p = interaction ? 2 + 2 * z.n_cols : 2 + z.n_cols;
   }
   
-  int L = tau_vec.n_elem;
-  int k = order - 1;
-  int N = L + k;
+  /* ---- knots ------------------------------------------------------------------ */
+  int nk;                                           // effective # of interior knots
+  if (numknot.isNotNull()) {
+    nk = Rcpp::as<int>(numknot);
+  } else {
+    double n_d  = static_cast<double>(n);
+    nk = static_cast<int>(std::floor(std::pow(n_d / std::log(n_d), 1.0 / 3.0)));
+    nk = std::max(nk, 1);                           // guard against n < 3, etc.
+  }
   
-  // Generate knots
-  arma::vec knots = arma::linspace<arma::vec>(arma::min(tau_vec), arma::max(tau_vec), L + 1);
+  const int k = order - 1;                          // spline degree 
+  const int N = nk + k;                             // number of B‑spline coeffs
+  const int L = tau_vec.n_elem;                     // # of quantile levels
+  
+  arma::vec knots = arma::linspace<arma::vec>(arma::min(tau_vec),
+                                              arma::max(tau_vec), nk + 1);
   // Rcpp::Rcout << "Knots: " << knots.t() << std::endl;
   
   // Call bsplineS from fda package
@@ -34,6 +45,9 @@ Rcpp::List mrqscr_cpp(const arma::vec& y,
   arma::mat v_star = arma::zeros(L * n, N * p);
   arma::vec result_coef = arma::zeros(p_init);
   arma::vec result_coef_ori = arma::zeros(p_init);
+  
+  Rcpp::Rcout << "Progress: 0%" << std::flush;
+  int next_pct = 10; 
   
   for (int iter = 0; iter < p_init; ++iter) {
     // Rcpp::Rcout << "Processing iteration: " << iter + 1 << " of " << p_init << std::endl;
@@ -102,6 +116,12 @@ Rcpp::List mrqscr_cpp(const arma::vec& y,
     
     result_coef(iter) = std::sqrt(arma::accu(arma::square(alpha_tau.row(1))));
     result_coef_ori(iter) = arma::accu(arma::sign(alpha_tau.row(1)));
+    
+    int pct_done = static_cast<int>( (iter + 1) * 100 / p_init ); // integer %
+    while (pct_done >= next_pct && next_pct <= 100) {
+      Rcpp::Rcout << " … " << next_pct << "%" << std::flush;
+      next_pct += 10;
+    }
   }
   
   // Final result
